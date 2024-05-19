@@ -39,7 +39,7 @@ void print_arr(TEST_TYPE *a, int line, const char* message)
 	);
 }
 
-int main()
+int main(void)
 {
 	TEST_TYPE *arr = array_new(TEST_TYPE, 10);	// size: 10, cap: 10
 	for (size_t i = 0; i < array_size(arr); ++i) { arr[i] = 127 - 2 * i; }
@@ -67,16 +67,37 @@ int main()
 
 	TEST_TYPE test_arr_data[] =  {0, 42, 0, 20, 0, 69, 0, 123, 0, 125, 0, 127, 0, };
 	TEST_TYPE* test_arr = array_new_buffer_copy(TEST_TYPE, test_arr_data, sizeof(test_arr_data) / sizeof(test_arr_data[0]));
-	typeof(EXIT_SUCCESS) exit_status;
 	if (array_compare(test_arr, arr, __qsort_cmps[sizeof(TEST_TYPE)])) {
 		puts("\x1b[31mTest for \"" stringify(TEST_TYPE)"\" failed\x1b[0m");
-		exit_status = EXIT_FAILURE;
+		goto exit_fail;
 	} else {
 		puts("\x1b[32mTest for \"" stringify(TEST_TYPE)"\" passed\x1b[0m");
-		exit_status = EXIT_SUCCESS;
+	}
+	TEST_TYPE* elem;
+	if ((elem = array_at(arr, 2)) != NULL) {
+		if (*elem == 42) {
+			puts("array_at(1) = 42");
+		}
+		else {
+			printf("%s@%i: array_at failed\n", __FILE__, __LINE__);
+			goto exit_fail;
+		}
+	} else {
+		printf("%s@%i: array_at failed\n", __FILE__, __LINE__);
+		goto exit_fail;
+
+	}
+	if (( elem = array_at(arr, 69420)) != NULL) {
+		printf("%s@%i: array_at failed\n", __FILE__, __LINE__);		
+		goto exit_fail;
 	}
 
+//exit:
 	array_free(arr);
 	array_free(test_arr);
-	exit(exit_status);
+	exit(EXIT_SUCCESS);
+exit_fail:
+	array_free(arr);
+	array_free(test_arr);
+	exit(EXIT_FAILURE);
 }

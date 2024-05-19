@@ -1,6 +1,6 @@
 
 CC := gcc
-CFLAGS := -g -Wall -Wextra -Wpedantic -Werror
+CFLAGS := -g -Wall -Wextra -Wpedantic -Werror -Wno-language-extension-token
 
 
 tests: dynarray

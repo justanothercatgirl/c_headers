@@ -63,7 +63,7 @@
 /// set capacity to minimum possible value
 #define array_shrink(array)	array = _memshrink_array(array)
 /// bound-checks and returns a pointer to that element. on error returns NULL 
-#define array_at(array, idx)	(idx < array_size(array) ? array[idx] : NULL)
+#define array_at(array, idx)	(idx < array_size(array) ? (typeof(array))((byte*)array + idx*array_size(array)) : NULL)
 /// sorts the array using compare_func for comparison
 #define array_qsort(array, compare_func) qsort(array, array_size(array), array_element_size(array), compare_func)
 /// sorts the array using pre-defined compariton functions for signed integers based on size (1, 2, 4, 8)
