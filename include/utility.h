@@ -11,7 +11,7 @@ typedef unsigned char byte;
 
 typedef int(*qsort_cmp_t)(const void*, const void*);
 #define get_qsort_cmp(type) __qsort_cmps[sizeof(type)]
-extern const qsort_cmp_t __qsort_cmps[];
+extern const qsort_cmp_t __qsort_cmps[64];
 
 #ifdef UTILITY_EXPOSE_HELPERS
 	#define _UTILITY_STATIC 
@@ -58,17 +58,26 @@ _UTILITY_STATIC int __default_long_cmp(const void* a, const void* b) {
 	return 0;
 }
 
+#ifdef __GNUC__
 // cope
 #pragma GCC diagnostic ignored "-Woverride-init" // Is is meant to override it on different platforms
-const qsort_cmp_t __qsort_cmps[] = {
+const qsort_cmp_t __qsort_cmps[64] = {
 	[sizeof(char)] = __default_char_cmp,
 	[sizeof(short)] = __default_short_cmp,
 	[sizeof(int)] = __default_int_cmp,
 	[sizeof(long)] = __default_long_cmp,
 	[sizeof(long long)] = __default_long_long_cmp,
-	[64] = 0,
+	[63] = 0,
 };
 #pragma GCC diagnostic warning "-Woverride-init"
+#else 	// not __GNUC__
+const qsort_cmp_t __qsort_cmps[64] = {
+	0, 
+	__default_char_cmp, __default_short_cmp, 0, __default_int_cmp, 
+	0, 0, 0, __default_long_long_cmp,
+};
+#endif 	// __GNUC__
+
 
 #endif // UTILITY_IMPLEMENTATION
 
