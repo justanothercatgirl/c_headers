@@ -1,8 +1,6 @@
-#define DYNARRAY_IMPLEMENTATION
-#define UTILITY_IMPLEMENTATION
+#define CONTAINER_IMPLEMENTATION
 #define UTILTY_EXPOSE_HELPERS
-#include "../include/dynarray.h"
-#include "../include/utility.h"
+#include "../include/container.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -56,7 +54,8 @@ int main(void)
 	array_qsort_integral(arr);			// size: 5, cap: 5
 	/* qsort(arr, array_size(arr), array_element_size(arr), __default_int_cmp); */
 	print_arr(arr, __LINE__, "qsort");
-	array_insert(arr, 20, 1);			// size: 6, cap: 8
+	TEST_TYPE __inserted = 20;
+	array_insert(arr, __inserted, 1);			// size: 6, cap: 8
 	print_arr(arr, __LINE__, "1 insert");
 
 	for (size_t i = 0; i <= array_size(arr); i += 2) {
@@ -74,7 +73,7 @@ int main(void)
 		puts("\x1b[32mTest for \"" stringify(TEST_TYPE)"\" passed\x1b[0m");
 	}
 	TEST_TYPE* elem;
-	if ((elem = array_at(arr, 2)) != NULL) {
+	if ((elem = array_at(arr, 1)) != NULL) {
 		if (*elem == 42) {
 			puts("array_at(1) = 42");
 		}
