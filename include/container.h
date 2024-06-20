@@ -115,6 +115,7 @@ extern const qsort_cmp_t __qsort_cmps[64];
 int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp);
 /// Exact copy of the array. you have to free the pointer as well.
 void* array_copy(void* old);
+char array_binary_search(void* array, void* element, qsort_cmp_t cmp);
 
 /* ----------------------------------------------------------------- */
 /* ----------------------LINKED LIST HEADER------------------------- */
@@ -339,6 +340,20 @@ int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp) 
 /*void* array_copy(void* old) {*/
 /*	//TODO!*/
 /*}*/
+
+char array_binary_search(void* array, void* element, qsort_cmp_t cmp) {
+	ssize_t index1 = -1,
+	        index2 = array_size(array);
+	if (index2 == 0) return 0;
+	while (1) {
+		ssize_t index3 = (index1+index2)/2;
+		if (index3 == index2 || index3 == index1 || index1 == index2) return 0;
+		int result = cmp(element, (byte*)array + array_element_size(array) * index3);
+		if (result == 0) return 1;
+		if (result < 0) index2 = index3;
+		else if (result > 0) index1 = index3;
+	}
+}
 
 
 #endif // CONTAINER_IMPLEMENTATION
