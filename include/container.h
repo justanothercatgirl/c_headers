@@ -29,6 +29,13 @@ typedef unsigned char byte;
 	unsigned long __bit_scan_32(int32_t number);
 	unsigned long __bit_scan_64(int64_t number);
 #endif
+#if defined(__clang__) || defined(__GNUC__)
+#define FALLTHROUGH __attribute__((fallthrough))
+#elif defined(_MSC_VER)
+#define FALLTHROUGH __fallthrough()
+#else
+#define FALLTHROUGH ((void)0)
+#endif
 
 typedef int(*qsort_cmp_t)(const void*, const void*);
 #define get_qsort_cmp(type) __qsort_cmps[sizeof(type)]
