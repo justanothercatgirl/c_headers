@@ -9,7 +9,7 @@ This is just a collection of (usually single-purpos) header files that I use ref
 # Descriptions for heders:
 ## [`container.h`](include/container.h)
 * Summary: originally was several headers, but since `hash_map.h` used `dynarray.h`, which itself used `utility.h`, it was too complex to work with. So i combined everything in a single header.
-* How to use: Define `CONTAINER_IMPLEMENTATION` macro before including `container.h`. It's probably better to `#undef` it after inclusion as well
+* How to use: Define `CONTAINER_IMPLEMENTATION` macro before including `container.h`. It's probably better to `#undef` it after inclusion as well. To use some functions (`__default_int_cmp` and alikes), define `CONTAINER_EXPOSE_HELPERS`.
 * Examples: See [tests](tests)
 ## [`rstypes.h`](include/rstypes.h)
 * Summary: rust type aliases (like `u32`, `f128` e.t.c.)
