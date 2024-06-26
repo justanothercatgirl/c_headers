@@ -23,7 +23,8 @@ container: tests/dynarray.c tests/dynarray_struct.c tests/obscure.c tests/binary
 	./$@
 	$(CC) $(CFLAGS) -o $@ tests/types.c
 	./$@
-
+	$(CC) $(CFLAGS) -o $@ tests/linked_list.c
+	./$@
 
 	rm $@
 

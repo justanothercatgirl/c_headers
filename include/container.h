@@ -1,11 +1,11 @@
 #ifndef JUSTANOTHERCATGIRL_HEADERS_CONTAINER
 #define JUSTANOTHERCATGIRL_HEADERS_CONTAINER
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-
+#include <stdarg.h>
 
 /* ----------------------------------------------------------------- */
 /* -----------------UTILITY HEADER---------------------------------- */
@@ -76,14 +76,14 @@ typedef void*(*memcpy_t)(void* restrict, const void*, size_t);
  * to all of the macros in this library.
  */
 
-/// size of the array header. should not be used directly, unless you know what you are doing
+/// size of the array header. Should not be used directly, unless you know what you are doing
 #define DYNARRAY_HEADER_SIZE sizeof(struct _dynarray_header)
 
 /// allocate new array of <size> elements of type <type>.
 #define array_new(type, size)	  _alloc_dynarray(sizeof(type), size)
 /// get amount of elements in the array
 #define array_size(array)	  (((struct _dynarray_header *)((byte *)(array)-DYNARRAY_HEADER_SIZE))->size)
-/// get array capacity (it's maximum size unitl reallocation)
+/// get array capacity (it's maximum size until reallocation)
 #define array_capacity(array)	  (((struct _dynarray_header *)((byte *)(array)-DYNARRAY_HEADER_SIZE))->capacity)
 /// get element size of an array (same as sizeof(array[0]), except not constant-expression)
 #define array_element_size(array) (((struct _dynarray_header *)((byte *)(array)-DYNARRAY_HEADER_SIZE))->memb_size)
@@ -116,16 +116,16 @@ typedef void*(*memcpy_t)(void* restrict, const void*, size_t);
 /// removes last element from the array
 #define array_pop(array) --array_header(array)->size
 /// reserve length elements so that subsequent (length - current_size) pushes require no reallocation
-#define array_reserve(array, length) 	if (typeof(array) __tmp; (__tmp = _memreserve_dynarray(array, length)) != NULL) array = __tmp
+#define array_reserve(array, length) 	do { array = _memreserve_dynarray(array, length); } while (0)
 /// change size of an array. the capacity is set to lowest power of 2 that is greater than length
-#define array_resize(array, length)	array = _force_resize_dynarray(array, length);
+#define array_resize(array, length)	do { array = _force_resize_dynarray(array, length); } while(0)
 /// set capacity to minimum possible value
-#define array_shrink(array)	array = _memshrink_array(array)
+#define array_shrink(array)	do { array = _memshrink_array(array); } while(0)
 /// bound-checks and returns a pointer to that element. on error returns NULL 
 #define array_at(array, idx)	(idx < array_size(array) ? (void*)((byte*)array + idx*array_element_size(array)) : NULL)
 /// sorts the array using compare_func for comparison
 #define array_qsort(array, compare_func) qsort(array, array_size(array), array_element_size(array), compare_func)
-/// sorts the array using pre-defined compariton functions for signed integers based on size (1, 2, 4, 8)
+/// sorts the array using pre-defined comparison functions for signed integers based on size (1, 2, 4, 8)
 #define array_qsort_integral(array) array_qsort(array, __qsort_cmps[array_element_size(array)])
 /// Placed here because is not a macro. compares 2 arrays and returns the same way as `strcmp`
 int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp);
@@ -134,14 +134,17 @@ void* array_copy(void* old);
 /// Search for element `element` in array `array` using comparator `cmp`. 
 /// Returns bool. Assumes that the array is sorted.
 char array_binary_search(void* array, void* element, qsort_cmp_t cmp);
+struct linked_list array_to_ll(void* array);
 
 /* ----------------------------------------------------------------- */
 /* ----------------------LINKED LIST HEADER------------------------- */
 /* ----------------------------------------------------------------- */
 
+typedef void(*free_t)(void*);
 struct __linked_list_meta {
 	size_t element_size;
 	size_t assumed_size;
+	free_t free_function;
 };
 struct linked_list_node {
 	void* data;
@@ -153,20 +156,24 @@ struct linked_list {
 	struct linked_list_node *first;
 	struct linked_list_node *last;
 };
+
 /// creates an empty linked list. `memb_size` should usually be sizeof(element type), 
 /// O(1)
 struct linked_list ll_create(size_t memb_size);
-/// Created linked list with elements as in buf. copies the memory with `memcpy`. 
+/// Created linked list with elements as in buf. Copies the memory with `memcpy`. 
 /// Assumes buffer size is >= buff_len * memb_size
 /// O(buff_len)
 struct linked_list ll_create_from_buffer(size_t memb_size, const void* buf, size_t buff_len);
 /// iteratively frees a linked list
 /// O(n)
 void ll_free(struct linked_list* list);
-/// searches an `element` in the list using `cmp`. returst whether it found it or not.
+/// searches an `element` in the list using `cmp`. Returns whether it found it or not.
 /// O(n)
 char ll_search(const struct linked_list* list, const void* element, qsort_cmp_t cmp);
-/// get a pointer to node at index i. DO NOT FREE THIS POINTER. returns NULL if
+/// searches for `element` in the list using `cmp`. Returns the node if it was found, else returns NULL
+/// O(n)
+struct linked_list_node* ll_find(const struct linked_list* list, const void* element, qsort_cmp_t cmp);
+/// get a pointer to node at index i. DO NOT FREE THIS POINTER. Returns NULL if
 /// list is not long enough.
 /// O(i)
 struct linked_list_node* ll_at(const struct linked_list* list, const size_t i);
@@ -218,6 +225,9 @@ void ll_remove_back(struct linked_list* list);
 /// Removes element at index i. if there is no such index, does nothing.
 /// O(n)
 char ll_remove_at(struct linked_list *list, size_t i);
+/// Removes ALL occurrences of element "elem" in a list
+/// O(n)
+void ll_remove_all(struct linked_list* list, const void* elem, qsort_cmp_t cmp);
 /// splits a linked list into two, the second one starting from element at index `i`.
 /// List that you passed stays valid, only it's size changes. return value is the second list.
 /// O(n)
@@ -227,19 +237,21 @@ struct linked_list ll_split_at(struct linked_list *list, size_t i);
 /// O(1)
 void ll_merge(struct linked_list* fst, struct linked_list* snd);
 /// splits linked list into N linked lists at indexes given in varargs.
-/// INDEXES MUST BE IN ASCENDING ORGER, OR ELSE ARE IGNORED.
+/// varargs type: size_t
+/// INDEXES MUST BE IN ASCENDING ORDER, OR ELSE ARE IGNORED.
 /// Returns array (as defined in array implementation above).
 /// O(n)
-struct linked_list* ll_split_n(size_t splits, size_t i, ...);
+struct linked_list* ll_split_n(struct linked_list* list, size_t splits, ...);
 /// merges N linked lists into one.
-/// Leaves first list valid (being), all other ones are invalidated. 
+/// varargs type: struct linked_list*
+/// Leaves `result` list valid, all other ones are invalidated. 
 /// Lists are appended in the order they are given in varargs.
 /// O(`merges`)
-void ll_merge_n(size_t merges, struct linked_list *l, ...);
+void ll_merge_n(struct linked_list* result, size_t merges, ...);
 /// creates array (not an array of pointers, array of elements! it uses memcpy to copy elements) 
 /// Leaves linked list unchanged
 void* ll_to_array(const struct linked_list* list);
-/// Same as `ll_to_array`, except it acceps function used for copying. Use if you think
+/// Same as `ll_to_array`, except it accepts function used for copying. Use if you think
 /// that your data should not be `memcpy`'d
 void* ll_to_array_custom_cpy(const struct linked_list* list, memcpy_t cpy);
 /// literally does: 
@@ -250,21 +262,96 @@ void* ll_to_array_custom_cpy(const struct linked_list* list, memcpy_t cpy);
 /// Also, I am not in a mood to write sorting algorithms today
 void ll_sort(struct linked_list *list, qsort_cmp_t cmp);
 /// Deallocates a node and returns next one;
-struct linked_list_node* ll_free_node(struct linked_list_node* node);
+struct linked_list_node* ll_free_node(struct linked_list* list, struct linked_list_node* node) ;
+/// Sets a custom free function for the data of the list
+void ll_set_free(struct linked_list* list, free_t new_free);
+/// Creates a deep copy of the list, meaning that it must be free'd as any other list
+/// Uses `cpy` function to copy data to new location. If NULL, memcpy is used.
+struct linked_list ll_deep_copy(const struct linked_list* list, memcpy_t cpy);
+
+/* ----------------------------------------------------------------- */
+/* ------------------------HASH MAP HEADER-------------------------- */
+/* ----------------------------------------------------------------- */
+
+#define HMAP_BUCKET_MAX_SIZE 8
+#define HMAP_DEFAULT_BUCKETS 32
+/// should return `0` only if first argument is not equal to second,
+/// otherwise should return `1` or any other positive integer
+/// OPERATES ON `struct hmap_pair*` !!!!!!!!!! NOT ON KEYS!
+typedef int(*hmap_equal_fn)(const void*, const void*);
+typedef size_t(*hmap_hash_fn)(const void*);
+struct hmap_pair {
+	void* key;
+	void* val;
+};
+struct hash_map {
+	struct linked_list* buckets;
+	hmap_equal_fn eq;
+	hmap_hash_fn hash;
+	size_t key_size;
+	size_t val_size;
+};
+enum hmapi_cmp_res {
+	hmap_lt = -1,
+	hmap_eq = 0,
+	hmap_gt = 1,
+	hmap_no = 0x80000000,
+};
+struct hash_map_iter {
+	const struct hash_map* map;
+	size_t bucket_pos;
+	struct linked_list_node* current_node;
+};
+struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash);
+struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, struct hmap_pair* buf, size_t buf_len);
+void hmap_free(struct hash_map* map);
+void hmap_insert(struct hash_map* map, struct hmap_pair element);
+/// pair is a pointer
+#define hmap_insert_pair(map, pair) hmap_insert_range(map, pair, 1);
+void hmap_insert_range(struct hash_map* map, struct hmap_pair* elements, size_t elements_len);
+void* hmap_get(struct hash_map* map, void* key);
+void hmap_remove(struct hash_map* map, void* key);
+/// double the size of a hash map
+void hmap_rehash(struct hash_map* map);
+
+/// initialize iterator `iter`.
+void hmapi_begin(const struct hash_map* map, struct hash_map_iter* iter);
+/// set iter to next element. If there is no next element, `hash_map_iter.current_node` is set to NULL
+void hmapi_next(struct hash_map_iter* iter);
+/// Get a key-value pair at the iterator iter. 
+/// If iter is pointing beyond hash map (after the last element), `(struct hmap_pair){NULL, NULL}` is returned
+struct hmap_pair hmapi_get_data(const struct hash_map_iter* iter);
+void* hmapi_get_key(const struct hash_map_iter* iter);
+void* hmapi_get_val(const struct hash_map_iter* iter);
+/// the function does comparison the same way `qsort_cmp_t` might do it, except this is wrapped in an enum. 
+/// This is done because 2 iterators might be incomparable (come from different hash maps), in this case `hampi_no` is returned.
+enum hmapi_cmp_res hmapi_cmp(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a > b, 0 otherwise.
+char hmapi_gt(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a = b, 0 otherwise
+char hmapi_eq(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a < b, 0 otherwise
+char hmapi_lt(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a >= b, 0 otherwise 
+char hmapi_ge(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a <= b, 0 otherwise 
+char hmapi_le(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if a != b, otherwise 0
+char hmapi_ne(const struct hash_map_iter *a, const struct hash_map_iter* b);
+/// 1 if `iter` is an end iterator, 0 otherwise
+char hmapi_end(const struct hash_map_iter* iter);
 
 
 /* ------------------------------------------------------------------------- */
 /* ------From now on, the rest of the header is implementation details------ */
-/* -------------------The API and documentation end here-------------------- */
+/* -------------------the API and documentation end here-------------------- */
 /* ------------------------------------------------------------------------- */
 
-// for internal use
 enum _dynarray_header_idx {
 	_dah_idx_member_size	= 0,
 	_dah_idx_capacity	= 1,
 	_dah_idx_size		= 2,
 };
-// for structurization
 struct _dynarray_header {
 	size_t memb_size;
 	size_t capacity;
@@ -387,14 +474,12 @@ void *_alloc_dynarray(size_t el_size, size_t len)
 	header->memb_size = el_size;
 	return data + DYNARRAY_HEADER_SIZE;
 }
-
 /// assumes that element size in the buffer is the same as element size in the array
 void *_alloc_dynarray_buffer(size_t el_size, size_t alen, void *buffer, size_t blen) { 
 	void *array = _alloc_dynarray(el_size, alen);
 	memcpy(array, buffer, el_size * blen);
 	return array;
 }
-
 void *_memreserve_dynarray(void * const dynarray, size_t reserved)
 {
 	struct _dynarray_header *hdr = array_header(dynarray);
@@ -406,7 +491,6 @@ void *_memreserve_dynarray(void * const dynarray, size_t reserved)
 	hdr->capacity = reserved;
 	return data + DYNARRAY_HEADER_SIZE;
 }
-
 void *_memshrink_array(void * const dynarray)
 {
 	struct _dynarray_header *hdr = array_header(dynarray);
@@ -417,8 +501,6 @@ void *_memshrink_array(void * const dynarray)
 	hdr->capacity = hdr->size;
 	return data + DYNARRAY_HEADER_SIZE;
 }
-
-
 void *_force_resize_dynarray(void * const dynarray, size_t new_size)
 {
 	struct _dynarray_header *hdr = array_header(dynarray);
@@ -437,7 +519,6 @@ void *_force_resize_dynarray(void * const dynarray, size_t new_size)
 		return arr;
 	}
 }
-
 void *_insert_to_index_dynarray(void *const dynarray, const void *const element, size_t el_size, size_t index) {
 	struct _dynarray_header* hdr = array_header(dynarray);
 	byte* array = (byte*) _memreserve_dynarray(dynarray, 1 << upper_2_power_64(hdr->size + 1));
@@ -448,11 +529,10 @@ void *_insert_to_index_dynarray(void *const dynarray, const void *const element,
 	memcpy(array + hdr->memb_size * index, element, el_size);
 	return array;
 }
-
 int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp) {
 	struct _dynarray_header *hdr = array_header(a1);
 	struct _dynarray_header *hdr2 = array_header(a2);
-	const size_t s1 = hdr->size, s2 = hdr->size;
+	const size_t s1 = hdr->size, s2 = hdr2->size;
 	const size_t elsize = hdr->memb_size;
 	size_t i;
 	for (i = 0; i < s1 && i < s2; ++i) {
@@ -465,11 +545,9 @@ int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp) 
 	TODO;
 	__builtin_unreachable();
 }
-
 void* array_copy(void* old) {
 	return _alloc_dynarray_buffer(array_element_size(old), array_size(old), old, array_size(old) * array_element_size(old));
 }
-
 char array_binary_search(void* array, void* element, qsort_cmp_t cmp) {
 	ssize_t index1 = -1,
 	        index2 = array_size(array);
@@ -483,6 +561,10 @@ char array_binary_search(void* array, void* element, qsort_cmp_t cmp) {
 		else if (result > 0) index1 = index3;
 	}
 }
+struct linked_list array_to_ll(void* array) {
+	struct linked_list ret = ll_create_from_buffer(array_element_size(array), array, array_size(array));
+	return ret;
+}
 
 /* ----------------------------------------------------------------- */
 /* ------------------LINKED LIST IMPLEMENTATION--------------------- */
@@ -491,6 +573,7 @@ struct linked_list ll_create(size_t memb_size) {
 	struct __linked_list_meta meta = {
 		.assumed_size = 0,
 		.element_size = memb_size,
+		.free_function = free,
 	};
 	struct linked_list ret = {
 		.meta = meta,
@@ -503,6 +586,7 @@ struct linked_list ll_create_from_buffer(size_t memb_size, const void* buf, size
 	struct __linked_list_meta meta = {
 		.assumed_size = buff_len,
 		.element_size = memb_size,
+		.free_function = free,
 	};
 	struct linked_list_node *current_node = calloc(1, sizeof(struct linked_list_node));
 	struct linked_list ret = { .meta = meta, .first = current_node };
@@ -530,7 +614,7 @@ void ll_free_(struct linked_list* list) {
 }
 void ll_free(struct linked_list* list) {
 	struct linked_list_node* node = list->first;
-	while ((node = ll_free_node(node)) != NULL) {}
+	while ((node = ll_free_node(list, node)) != NULL) {}
 	memset(list, 0, sizeof(*list));
 }
 char ll_search(const struct linked_list* list, const void* element, qsort_cmp_t cmp) {
@@ -538,6 +622,12 @@ char ll_search(const struct linked_list* list, const void* element, qsort_cmp_t 
 		if (cmp(element, current->data) == 0) return 1;
 	}
 	return 0;
+}
+struct linked_list_node* ll_find(const struct linked_list* list, const void* element, qsort_cmp_t cmp) {
+	for (struct linked_list_node *current = list->first; current != NULL; current = current->next) {
+		if (cmp(element, current->data) == 0) return current;
+	}
+	return NULL;
 }
 struct linked_list_node* ll_at(const struct linked_list* list, const size_t i) {
 	size_t j = 0;
@@ -579,14 +669,15 @@ void ll_append(struct linked_list *list, const void* restrict element) {
 	struct linked_list_node *new = calloc(1, sizeof(struct linked_list_node));
 	new->data = malloc(list->meta.element_size);
 	memcpy(new->data, element, list->meta.element_size);
-	if (list->last == NULL) list->first = list->last = new;
+	if (list->last == NULL) list->first = new;
 	else list->last->next = new;
 	++list->meta.assumed_size;
 	list->last = new;
 }
 void ll_append_mallocated_pointer(struct linked_list *list, void* pointer) {
-	struct linked_list_node *new = calloc(1, sizeof(struct linked_list_node));
+	struct linked_list_node *new = malloc(sizeof(struct linked_list_node));
 	new->data = pointer;
+	new->next = NULL;
 	if (list->last == NULL) list->first = list->last = new;
 	else list->last->next = new;
 	++list->meta.assumed_size;
@@ -656,24 +747,25 @@ char ll_insert_at_mallocated_pointer(struct linked_list *list, void* pointer, si
 }
 void ll_remove_front(struct linked_list* list) {
 	if (list->first == NULL) return;
-	list->first = ll_free_node(list->first);
+	list->first = ll_free_node(list, list->first);
 	--list->meta.assumed_size;
 	if (list->meta.assumed_size <= 1) list->last = list->first;
 }
 void ll_remove_back(struct linked_list* list) {
 	if (list->meta.assumed_size == 0) return;
 	if (list->meta.assumed_size == 1) {
-		list->first = ll_free_node(list->first);
+		list->first = list->last = ll_free_node(list, list->first);
 		goto common;
 	}
 	if (list->meta.assumed_size == 2) {
-		list->first->next = ll_free_node(list->last);
+		list->first->next = ll_free_node(list, list->last);
 		list->last = list->first;
 		goto common;
 	}
 	struct linked_list_node* prelast;
 	if ((prelast = ll_at(list, list->meta.assumed_size-1-1)) == NULL) return;
-	prelast->next = ll_free_node(list->last);
+	ll_free_node(list, list->last);
+	prelast->next = NULL;
 	list->last = prelast;
 common:
 	--list->meta.assumed_size;
@@ -690,23 +782,273 @@ char ll_remove_at(struct linked_list *list, size_t i) {
 	}
 	struct linked_list_node *before_removed;
 	if ((before_removed = ll_at(list, i-1)) == NULL) return 0;
-	before_removed->next = ll_free_node(before_removed->next);
+	before_removed->next = ll_free_node(list, before_removed->next);
 	--list->meta.assumed_size;
 	return 1;
 }
-struct linked_list ll_split_at(struct linked_list *list, size_t i);
-void ll_merge(struct linked_list* fst, struct linked_list* snd);
-struct linked_list* ll_split_n(size_t splits, size_t i, ...);
-void ll_merge_n(size_t merges, struct linked_list *l, ...);
-void* ll_to_array(const struct linked_list* list);
-void* ll_to_array_custom_cpy(const struct linked_list* list, memcpy_t cpy);
-void ll_sort(struct linked_list *list, qsort_cmp_t cmp);
-struct linked_list_node* ll_free_node(struct linked_list_node* node) {
+void ll_remove_all(struct linked_list* list, const void* elem, qsort_cmp_t cmp) {
+	while (cmp(list->first->data, elem) == 0) ll_remove_front(list);
+	struct linked_list_node *prev = list->first,
+			        *current;
+	for (current = prev->next; current != NULL; current = prev->next) {
+		if (cmp(current->data, elem) != 0) {
+			prev = current;
+			continue;
+		}
+		if (current == list->last) {
+			ll_remove_back(list);
+			return;
+		}
+		prev->next = ll_free_node(list, current);
+		--list->meta.assumed_size;
+	}
+}
+struct linked_list ll_split_at(struct linked_list *list, size_t i) {
+	struct linked_list ret = {.meta = list->meta };
+	ret.meta.element_size = list->meta.element_size;
+	if (i == 0) {
+		ret = *list;
+		list->first = list->last = NULL;
+		list->meta.assumed_size = 0;
+		return ret;
+	}
+	if (i == list->meta.assumed_size) return ll_create(list->meta.element_size);
+	struct linked_list_node* spl_prev = ll_at(list, i-1);
+	if (spl_prev == NULL) return ret;
+	ret.first = spl_prev->next;
+	ret.last = list->last;
+	spl_prev->next = NULL;
+	list->last = spl_prev;
+	ret.meta.assumed_size = list->meta.assumed_size - i;
+	list->meta.assumed_size = i;
+	return ret;
+}
+void ll_merge(struct linked_list* fst, struct linked_list* snd) {
+	fst->last->next = snd->first;
+	fst->last = snd->last;
+	fst->meta.assumed_size += snd->meta.assumed_size;
+	memset(snd, 0, sizeof(*snd));
+}
+struct linked_list* ll_split_n(struct linked_list* list, size_t splits, ...) {
+	struct linked_list* ret = array_new(struct linked_list, splits + 1);
+	ret[0] = *list;
+	size_t accum_index = 0;
+	va_list args;
+	va_start(args, splits);
+	for (size_t i = 1; i <= splits; ++i) {
+		size_t split_index = va_arg(args, size_t);
+		ret[i] = ll_split_at(ret+i-1, split_index-accum_index);
+		accum_index = split_index;
+	}
+	return ret;
+}
+void ll_merge_n(struct linked_list* result, size_t merges, ...) {
+	va_list args;
+	va_start(args, merges);
+	for (size_t i = 0; i < merges; ++i) {
+		struct linked_list* list = va_arg(args, struct linked_list*);
+		ll_merge(result, list);
+	}
+}
+void* ll_to_array(const struct linked_list* list) {
+	return ll_to_array_custom_cpy(list, memcpy);
+}
+void* ll_to_array_custom_cpy(const struct linked_list* list, memcpy_t cpy) {
+	void* array = _alloc_dynarray(list->meta.element_size, list->meta.assumed_size);
+	struct linked_list_node* iter = list->first;
+	for (size_t i = 0; (iter = iter->next) != NULL; ++i) {
+		cpy((byte*) array + list->meta.element_size * i, iter->data, list->meta.element_size);
+	}
+	return array;
+}
+void ll_sort(struct linked_list *list, qsort_cmp_t cmp) {
+	void* array = ll_to_array(list);
+	array_qsort(array, cmp);
+	ll_free(list);
+	*list = array_to_ll(array);
+	array_free(array);
+}
+struct linked_list_node* ll_free_node(struct linked_list* list, struct linked_list_node* node) {
 	if (node == NULL) return NULL;
 	struct linked_list_node* ret = node->next;
-	free(node->data);
+	list->meta.free_function(node->data);
 	free(node);
 	return ret;
+}
+void ll_set_free(struct linked_list* list, free_t new_free) {
+	list->meta.free_function = new_free;
+}
+struct linked_list ll_deep_copy(const struct linked_list* list, memcpy_t cpy) {
+	if (cpy == NULL) cpy = memcpy;
+	struct linked_list ret = *list;
+	ret.meta.assumed_size = 0;
+	ret.last = ret.first = NULL;
+	struct linked_list_node* iter = list->first;
+	void* memory = alloca(list->meta.element_size);
+	memset(memory, 0, list->meta.element_size);
+	while (iter != NULL) {
+		ll_append(&ret, memory);
+		cpy(iter->data, ret.last->data, list->meta.element_size);
+		iter = iter->next;
+	}
+	return ret;
+}
+
+
+/* ----------------------------------------------------------------- */
+/* ---------------------HASH MAP IMPLEMENTATION--------------------- */
+/* ----------------------------------------------------------------- */
+
+void __hmap_ll_custom_free(void* data) {
+	struct hmap_pair *pair = data;
+	free(pair->key);
+	free(pair->val);
+	free(pair);
+}
+struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash) {
+	struct hash_map ret = {
+		.buckets = array_new(struct linked_list, HMAP_DEFAULT_BUCKETS),
+		.key_size = key_size,
+		.val_size = val_size,
+		.eq = eq,
+		.hash = hash,
+	};
+	const struct linked_list def = {
+		.meta = {
+			.element_size = key_size+val_size, 
+			.assumed_size = 0, 
+			.free_function = __hmap_ll_custom_free,
+		}, 
+		.first = NULL, 
+		.last = NULL,
+	};
+	for (size_t i = 0; i < HMAP_DEFAULT_BUCKETS; ++i) ret.buckets[i] = def;
+	return ret;
+}
+struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, struct hmap_pair* buf, size_t buf_len) {
+	struct hash_map ret = hmap_create(key_size, val_size, eq, hash);
+	for (size_t i = 0; i < buf_len; ++i) ll_append(ret.buckets + (ret.hash(buf[i].key) % array_size(ret.buckets)), buf + i);
+	return ret;
+}
+void hmap_free(struct hash_map* map) {
+	for (size_t i = 0; i < array_size(map->buckets); ++i) ll_free(map->buckets + i);
+	array_free(map->buckets);
+	memset(map, 0, sizeof(*map));
+}
+void hmap_insert(struct hash_map* map, struct hmap_pair element) {
+	size_t index = map->hash(element.key) % array_size(map->buckets);
+	ll_append(map->buckets + index, &element);
+	if (map->buckets[index].meta.assumed_size > HMAP_BUCKET_MAX_SIZE) hmap_rehash(map);
+}
+/// pair is a pointer
+void hmap_insert_range(struct hash_map* map, struct hmap_pair* elements, size_t elements_len) {
+	for (size_t i = 0; i < elements_len; ++i) hmap_insert(map, elements[i]);
+}
+void* hmap_get(struct hash_map* map, void* key) {
+	size_t index = map->hash(key) % array_size(map->buckets);
+	struct linked_list* target_list = map->buckets + index;
+	struct linked_list_node* node = ll_find(target_list, key, map->eq);
+	if (node == NULL) { return NULL; }
+	struct hmap_pair *pair = node->data;
+	return pair->val;
+}
+void hmap_remove(struct hash_map* map, void* key) {
+	size_t index = map->hash(key) % array_size(map->buckets);
+	struct linked_list* target_list = map->buckets + index;
+	struct hmap_pair tmppr = {.key = key, .val = NULL};
+	ll_remove_all(target_list, &tmppr, map->eq);
+}
+/// double the size of a hash map
+void hmap_rehash(struct hash_map* map) {
+	size_t new_size = array_size(map->buckets) * 2;
+	struct linked_list* new_buckets = array_new(struct linked_list, new_size);
+	for (size_t i = 0; i < new_size; ++i)
+		new_buckets[i] = ll_create( /* I know this is ugly */ map->buckets[0].meta.element_size);
+
+	struct hash_map_iter iter;
+	for (hmapi_begin(map, &iter); !hmapi_end(&iter); hmapi_next(&iter)) {
+		size_t hash_pos = map->hash(hmapi_get_key(&iter)) % new_size;
+		struct hmap_pair hash_data = hmapi_get_data(&iter);
+		ll_append(new_buckets + hash_pos, &hash_data);
+	}
+	array_free(map->buckets);
+	map->buckets = new_buckets;
+}
+void hmapi_begin(const struct hash_map* map, struct hash_map_iter* iter) {
+	memset(iter, 0, sizeof(struct hash_map_iter));
+	iter->map = map;
+	struct linked_list* buckets = map->buckets;
+	for (size_t i = 0; i < array_size(buckets); ++i) {
+		if (buckets[i].first == NULL) continue;
+		iter->bucket_pos = i;
+		iter->current_node = buckets[i].first;
+		return;
+	}
+	iter->bucket_pos = SIZE_MAX;
+	iter->current_node = NULL;
+}
+void hmapi_next(struct hash_map_iter* iter) {
+	if (iter->current_node == NULL) return;
+	if (iter->current_node->next != NULL) {
+		iter->current_node = iter->current_node->next;
+		return;
+	}
+	const struct linked_list *buckets = iter->map->buckets;
+	for (size_t i = iter->bucket_pos + 1; i < array_size(buckets); ++i) {
+		if (buckets[i].first == NULL) continue;
+		iter->bucket_pos = i;
+		iter->current_node = buckets[i].first;
+		return;
+	}
+	iter->bucket_pos = SIZE_MAX;
+	iter->current_node = NULL;
+}
+struct hmap_pair hmapi_get_data(const struct hash_map_iter* iter) {
+	if (iter->current_node == NULL) return (struct hmap_pair){NULL, NULL};
+	struct hmap_pair ret = *(struct hmap_pair*)(iter->current_node->data);
+	return ret;
+}
+void* hmapi_get_key(const struct hash_map_iter* iter) {
+	if (iter->current_node == NULL) return NULL;
+	struct hmap_pair *pair = iter->current_node->data;
+	return pair->key;
+}
+void* hmapi_get_val(const struct hash_map_iter* iter) {
+	if (iter->current_node == NULL) return NULL;
+	struct hmap_pair *pair = iter->current_node->data;
+	return pair->val;
+}
+enum hmapi_cmp_res hmapi_cmp(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	if (a->map != b->map) return hmap_no;
+	if (a->bucket_pos != b->bucket_pos) return (a->bucket_pos > b->bucket_pos) ? hmap_gt : hmap_lt;
+	if (a->current_node == b->current_node) return hmap_eq;
+	for (const struct linked_list_node* nd = a->current_node; nd != NULL; nd = nd->next) {
+		if (nd == b->current_node) return hmap_lt;
+	}
+	return hmap_gt;
+}
+char hmapi_gt(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	return hmapi_cmp(a, b) == hmap_gt;
+}
+char hmapi_eq(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	return hmapi_cmp(a, b) == hmap_eq;
+}
+char hmapi_lt(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	return hmapi_cmp(a, b) == hmap_lt;
+}
+char hmapi_ge(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	enum hmapi_cmp_res res = hmapi_cmp(a, b);
+	return res == hmap_gt || res == hmap_eq;
+}
+char hmapi_le(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	enum hmapi_cmp_res res = hmapi_cmp(a, b);
+	return res == hmap_lt || res == hmap_eq;
+}
+char hmapi_ne(const struct hash_map_iter *a, const struct hash_map_iter* b) {
+	return hmapi_cmp(a, b) != hmap_eq;
+}
+char hmapi_end(const struct hash_map_iter* iter) {
+	return iter->current_node == NULL || iter->bucket_pos == SIZE_MAX;
 }
 
 

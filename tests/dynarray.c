@@ -29,7 +29,7 @@ void print_arr(TEST_TYPE *a, int line, const char* message)
 #elif defined(TT_LONG)
 		printf("%li, ", a[i]);
 #else
-#pragma message error "PROVIDE A VALID SIGNED INTEGRAL TYPE"
+#pragma error "PROVIDE A VALID SIGNED INTEGRAL TYPE"
 #endif
 	}
 	printf("} size: %ld, cap: %ld, element_size: %ld\n", 
