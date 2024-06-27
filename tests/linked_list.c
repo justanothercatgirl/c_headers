@@ -4,15 +4,15 @@
 
 void print_linked_list(struct linked_list* list) {
 	int i = 0;
-	printf("linked list at %p, size = %zu\n", list, list->meta.assumed_size);
-	printf("first=%p, last=%p\n", list->first, list->last);
+	printf("linked list at %p, size = %zu\n", (void*)list, list->meta.assumed_size);
+	printf("first=%p, last=%p\n", (void*)list->first, (void*)list->last);
 	for (struct linked_list_node* current = list->first; current != NULL; current = current->next) {
-		printf("[%i] = {%i, %p}\n", i, *(int*)current->data, current->next);
+		printf("[%i] = {%i, %p}\n", i, *(int*)current->data, (void*)current->next);
 		++i;
 	}
 }
 
-int main() {
+int main(void) {
 	int buf[] = {0, 1, 3, 2, 7, 8, 6, 0, 18, 1};
 	struct linked_list list = ll_create_from_buffer(sizeof(int), buf, sizeof(buf)/sizeof(*buf));
 
@@ -24,7 +24,8 @@ int main() {
 	ll_insert_front(&list, &one);
 	ll_append(&list, &one);
 	ll_append(&list, &one);
-	ll_remove_all(&list, &one, __default_int_cmp);
+	// TODO: fix this function
+	ll_remove_all(&list, &one, __default_int_cmp); 
 	print_linked_list(&list);
 	ll_remove_at(&list, 3);
 	ll_remove_back(&list);

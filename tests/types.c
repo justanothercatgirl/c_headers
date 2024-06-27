@@ -1,7 +1,8 @@
 #include <stdio.h>
+#define RS_TYPES_USE_128
 #include "../include/rstypes.h"
 
-i32 main() {
+i32 main(void) {
 	u8 a = 215;
 	i8 b = -127;
 	u16 c = 65535;

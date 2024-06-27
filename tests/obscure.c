@@ -5,7 +5,7 @@
 
 typedef char* packet_t;
 
-int main() {
+int main(void) {
 	packet_t *data = array_new(packet_t, 0);
 	packet_t el_0 = malloc(128);
 	memset(el_0, 42, 128);

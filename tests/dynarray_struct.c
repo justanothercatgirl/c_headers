@@ -27,7 +27,7 @@ int point_abs(const void* a, const void* b) {
 	return absa-absb;
 }
 
-int main()
+int main(void)
 {
 	struct point *points = array_new(struct point, 4);
 	for (size_t i = 0; i < array_size(points); ++i) points[i] = (struct point){.x = i, .y = 2 * i, .z = 4 * i, .w = 8 * i};

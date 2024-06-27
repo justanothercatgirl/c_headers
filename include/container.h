@@ -41,7 +41,6 @@ typedef unsigned char byte;
 
 /// define TODO macro
 #define TODO (void)(*(volatile char*)0)
-
 /// typedefs for array qsort
 typedef int(*qsort_cmp_t)(const void*, const void*);
 #define get_qsort_cmp(type) __qsort_cmps[sizeof(type)]
@@ -225,7 +224,12 @@ void ll_remove_back(struct linked_list* list);
 /// Removes element at index i. if there is no such index, does nothing.
 /// O(n)
 char ll_remove_at(struct linked_list *list, size_t i);
+/// removes first occurrence of element `elem` from list.
+void ll_remove_elem(struct linked_list* list, const void* elem, qsort_cmp_t cmp);
 /// Removes ALL occurrences of element "elem" in a list
+/// WARNING: SOMETHING IS WRONG WITH THIS FUNCTION AND IT SHOULD NOT BE USED EVER
+/// UNLESS I FIX IT
+/// FOR NOW I WILL ADD TODO MARK THERE
 /// O(n)
 void ll_remove_all(struct linked_list* list, const void* elem, qsort_cmp_t cmp);
 /// splits a linked list into two, the second one starting from element at index `i`.
@@ -273,10 +277,14 @@ struct linked_list ll_deep_copy(const struct linked_list* list, memcpy_t cpy);
 /* ------------------------HASH MAP HEADER-------------------------- */
 /* ----------------------------------------------------------------- */
 
-#define HMAP_BUCKET_MAX_SIZE 8
-#define HMAP_DEFAULT_BUCKETS 32
-/// should return `0` only if first argument is not equal to second,
-/// otherwise should return `1` or any other positive integer
+#ifndef HMAP_MAX_BUCKET_SIZE
+	#define HMAP_MAX_BUCKET_SIZE 8
+#endif
+#ifndef HMAP_INIT_SIZE
+	#define HMAP_INIT_SIZE 32
+#endif
+/// should return `0` only if first argument is equal to second,
+/// otherwise should return `1` or any other integer
 /// OPERATES ON `struct hmap_pair*` !!!!!!!!!! NOT ON KEYS!
 typedef int(*hmap_equal_fn)(const void*, const void*);
 typedef size_t(*hmap_hash_fn)(const void*);
@@ -295,24 +303,34 @@ enum hmapi_cmp_res {
 	hmap_lt = -1,
 	hmap_eq = 0,
 	hmap_gt = 1,
-	hmap_no = 0x80000000,
+	hmap_no = 0xB19A55,
 };
 struct hash_map_iter {
 	const struct hash_map* map;
 	size_t bucket_pos;
 	struct linked_list_node* current_node;
 };
+typedef struct hash_map_iter hmap_iter;
 struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash);
-struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, struct hmap_pair* buf, size_t buf_len);
+/// copies data from pointers
+struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len);
 void hmap_free(struct hash_map* map);
-void hmap_insert(struct hash_map* map, struct hmap_pair element);
+/// copy the contents of the pair into hash map (using `memcpy`). 
+/// The element is left unchanged, the memory pointed to by `element` may be anything, from stack to FFI allocator
+void hmap_insert_copy(struct hash_map* map, const struct hmap_pair element);
+/// returns 1 if an object was inserted, 0 if it was not. This is done to be able to free uninserted pointer.
+char hmap_insert_mallocated(struct hash_map* map, struct hmap_pair element);
 /// pair is a pointer
 #define hmap_insert_pair(map, pair) hmap_insert_range(map, pair, 1);
-void hmap_insert_range(struct hash_map* map, struct hmap_pair* elements, size_t elements_len);
+/// copies data from pointers
+void hmap_insert_range(struct hash_map* map, const struct hmap_pair* elements, size_t elements_len);
 void* hmap_get(struct hash_map* map, void* key);
+/// returns 1 if value was updates successfully, otherwise 0 (if key does not exist)
+char hmap_update(struct hash_map* map, void* key, void* new_val);
 void hmap_remove(struct hash_map* map, void* key);
 /// double the size of a hash map
 void hmap_rehash(struct hash_map* map);
+void hmap_rehash_to_size(struct hash_map* map, size_t new_size);
 
 /// initialize iterator `iter`.
 void hmapi_begin(const struct hash_map* map, struct hash_map_iter* iter);
@@ -369,7 +387,7 @@ void *_insert_to_index_dynarray(void *const dynarray, const void *const element,
 
 
 // uncomment in dev mode so that LSP highlights the code
-#define CONTAINER_IMPLEMENTATION
+/*#define CONTAINER_IMPLEMENTATION*/
 #ifdef CONTAINER_IMPLEMENTATION
 
 /* ----------------------------------------------------------------- */
@@ -647,7 +665,8 @@ void ll_truncate(struct linked_list* list, const size_t i) {
 	struct linked_list_node *start = ll_at(list, i-1);
 	if (start == NULL) return;
 	struct linked_list freeable = {
-		.meta = {list->meta.element_size, list->meta.assumed_size - i},
+		.meta = {list->meta.element_size, list->meta.assumed_size - i, .free_function = list->meta.free_function,
+},
 		.first = start->next,
 	};
 	ll_free(&freeable);
@@ -786,8 +805,33 @@ char ll_remove_at(struct linked_list *list, size_t i) {
 	--list->meta.assumed_size;
 	return 1;
 }
+void ll_remove_elem(struct linked_list* list, const void* elem, qsort_cmp_t cmp) {
+	if (list->first == NULL) return;
+	if (cmp(list->first->data, elem) == 0) {
+		ll_remove_front(list);
+		return;
+	}
+	struct linked_list_node *fst = list->first, 
+				*snd = fst->next;
+	while (snd != NULL) {
+		if (cmp(snd->data, elem) == 0) {
+			fst->next = ll_free_node(list, snd);
+			return;
+		}
+	}
+	if (cmp(fst->data, elem) == 0) ll_remove_back(list);
+}
 void ll_remove_all(struct linked_list* list, const void* elem, qsort_cmp_t cmp) {
-	while (cmp(list->first->data, elem) == 0) ll_remove_front(list);
+	printf("DON'T USE THIS FUNCTION!!!!!\n");
+	TODO;
+	__builtin_unreachable();
+
+	if (list->first == NULL) return;
+	while (1) {
+		if (list->first == NULL) return;
+		if (cmp(list->first->data, elem) == 0) ll_remove_front(list);
+		else break;
+	}
 	struct linked_list_node *prev = list->first,
 			        *current;
 	for (current = prev->next; current != NULL; current = prev->next) {
@@ -903,11 +947,11 @@ void __hmap_ll_custom_free(void* data) {
 	struct hmap_pair *pair = data;
 	free(pair->key);
 	free(pair->val);
-	free(pair);
+	free(data);
 }
 struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash) {
 	struct hash_map ret = {
-		.buckets = array_new(struct linked_list, HMAP_DEFAULT_BUCKETS),
+		.buckets = array_new(struct linked_list, HMAP_INIT_SIZE),
 		.key_size = key_size,
 		.val_size = val_size,
 		.eq = eq,
@@ -915,19 +959,20 @@ struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_e
 	};
 	const struct linked_list def = {
 		.meta = {
-			.element_size = key_size+val_size, 
+			.element_size = sizeof(struct hmap_pair),
 			.assumed_size = 0, 
 			.free_function = __hmap_ll_custom_free,
 		}, 
 		.first = NULL, 
 		.last = NULL,
 	};
-	for (size_t i = 0; i < HMAP_DEFAULT_BUCKETS; ++i) ret.buckets[i] = def;
+	for (size_t i = 0; i < HMAP_INIT_SIZE; ++i) ret.buckets[i] = def;
 	return ret;
 }
-struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, struct hmap_pair* buf, size_t buf_len) {
+struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len) {
 	struct hash_map ret = hmap_create(key_size, val_size, eq, hash);
-	for (size_t i = 0; i < buf_len; ++i) ll_append(ret.buckets + (ret.hash(buf[i].key) % array_size(ret.buckets)), buf + i);
+	hmap_rehash_to_size(&ret, buf_len / HMAP_MAX_BUCKET_SIZE);
+	for (size_t i = 0; i < buf_len; ++i) hmap_insert_copy(&ret, buf[i]);
 	return ret;
 }
 void hmap_free(struct hash_map* map) {
@@ -935,41 +980,78 @@ void hmap_free(struct hash_map* map) {
 	array_free(map->buckets);
 	memset(map, 0, sizeof(*map));
 }
-void hmap_insert(struct hash_map* map, struct hmap_pair element) {
+void hmap_insert_copy(struct hash_map* map, const struct hmap_pair element) {
 	size_t index = map->hash(element.key) % array_size(map->buckets);
-	ll_append(map->buckets + index, &element);
-	if (map->buckets[index].meta.assumed_size > HMAP_BUCKET_MAX_SIZE) hmap_rehash(map);
+	if (ll_search(map->buckets + index, &element, map->eq)) {
+		struct hmap_pair* target = ll_find(map->buckets + index, &element, map->eq)->data;
+		memcpy(target->val, element.val, map->val_size);
+		return;
+	}
+	struct hmap_pair copy = {malloc(map->key_size), malloc(map->val_size)};
+	memcpy(copy.key, element.key, map->key_size);
+	memcpy(copy.val, element.val, map->val_size);
+	ll_append(map->buckets + index, &copy);
+	if (map->buckets[index].meta.assumed_size > HMAP_MAX_BUCKET_SIZE) hmap_rehash(map);
 }
-/// pair is a pointer
-void hmap_insert_range(struct hash_map* map, struct hmap_pair* elements, size_t elements_len) {
-	for (size_t i = 0; i < elements_len; ++i) hmap_insert(map, elements[i]);
+char hmap_insert_mallocated(struct hash_map* map, struct hmap_pair element) {
+	size_t index = map->hash(element.key) % array_size(map->buckets);
+	if (ll_search(map->buckets + index, &element, map->eq)) {
+		struct hmap_pair* target = ll_find(map->buckets + index, &element, map->eq)->data;
+		free(target->val);
+		target->val = element.val;
+		free(element.key);
+		return 0;
+	}
+	ll_append(map->buckets + index, &element);
+	if (map->buckets[index].meta.assumed_size > HMAP_MAX_BUCKET_SIZE) hmap_rehash(map);
+	return 1;
+}
+void hmap_insert_range(struct hash_map* map, const struct hmap_pair* elements, size_t elements_len) {
+	for (size_t i = 0; i < elements_len; ++i) hmap_insert_copy(map, elements[i]);
 }
 void* hmap_get(struct hash_map* map, void* key) {
 	size_t index = map->hash(key) % array_size(map->buckets);
 	struct linked_list* target_list = map->buckets + index;
-	struct linked_list_node* node = ll_find(target_list, key, map->eq);
-	if (node == NULL) { return NULL; }
+	struct hmap_pair pr = {.key = key, .val = NULL };
+	struct linked_list_node* node = ll_find(target_list, &pr, map->eq);
+	if (node == NULL) return NULL;
 	struct hmap_pair *pair = node->data;
 	return pair->val;
+}
+char hmap_update(struct hash_map* map, void* key, void* new_val) {
+	size_t index = map->hash(key) % array_size(map->buckets);
+	struct linked_list* target_list = map->buckets + index;
+	struct hmap_pair pr = {.key = key, .val = NULL };
+	struct linked_list_node* node = ll_find(target_list, &pr, map->eq);
+	if (node == NULL) return 0;
+	memcpy(((struct hmap_pair*)node->data)->val, new_val, map->val_size);
+	return 1;
 }
 void hmap_remove(struct hash_map* map, void* key) {
 	size_t index = map->hash(key) % array_size(map->buckets);
 	struct linked_list* target_list = map->buckets + index;
 	struct hmap_pair tmppr = {.key = key, .val = NULL};
-	ll_remove_all(target_list, &tmppr, map->eq);
+	ll_remove_elem(target_list, &tmppr, map->eq);
+}
+void hmap_rehash(struct hash_map* map) {
+	hmap_rehash_to_size(map, array_size(map->buckets) << 1);
 }
 /// double the size of a hash map
-void hmap_rehash(struct hash_map* map) {
-	size_t new_size = array_size(map->buckets) * 2;
+void hmap_rehash_to_size(struct hash_map* map, size_t new_size) {
 	struct linked_list* new_buckets = array_new(struct linked_list, new_size);
-	for (size_t i = 0; i < new_size; ++i)
-		new_buckets[i] = ll_create( /* I know this is ugly */ map->buckets[0].meta.element_size);
-
+	for (size_t i = 0; i < new_size; ++i) {
+		new_buckets[i] = ll_create(sizeof(struct hmap_pair));
+		new_buckets[i].meta.free_function = __hmap_ll_custom_free;
+	}
 	struct hash_map_iter iter;
 	for (hmapi_begin(map, &iter); !hmapi_end(&iter); hmapi_next(&iter)) {
 		size_t hash_pos = map->hash(hmapi_get_key(&iter)) % new_size;
 		struct hmap_pair hash_data = hmapi_get_data(&iter);
 		ll_append(new_buckets + hash_pos, &hash_data);
+	}
+	for (size_t i = 0; i < array_size(map->buckets); ++i) {
+		map->buckets[i].meta.free_function = free;
+		ll_free(map->buckets + i);
 	}
 	array_free(map->buckets);
 	map->buckets = new_buckets;

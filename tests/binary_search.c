@@ -4,7 +4,7 @@
 #define prints(el) \
 	do {printf("search %i: %s\n", el, (array_binary_search(array, &el, __default_int_cmp)) ? "true" : "false");} while(0)
 
-int main() {
+int main(void) {
 	int data[] = {9, 5, 2, 7, 6, 10, 5, 9, 7}; // no 8 there
 	int* array = array_new(int, sizeof(data)/sizeof(data[0]));
 	memcpy(array, data, sizeof(data));

@@ -1,1 +1,2 @@
 -DTT_INT
+-Wall -Wextra -Wpedantic -Werror
