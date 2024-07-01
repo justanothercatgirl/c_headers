@@ -103,6 +103,7 @@ typedef void*(*memcpy_t)(void* restrict, const void*, size_t);
 		array[_ahdr->size] = (element);								\
 		++_ahdr->size;										\
 	} while (0)
+#define array_extend(array, buffer, len) do {array = _array_extend(array, buffer, len); } while(0)
 /// inserts element at given index element is evaluated once.
 /// Note: `element` HAS to be of same type as the array during initialization. The expression has to be of the same type.
 /// That means calling `array_insert(arr, 0, 5)`, where array is of type `long`, WILL lead to errors. because typeof(0) is
@@ -384,10 +385,10 @@ void *_force_resize_dynarray(void *dynarray, size_t new_size);
 void *_memreserve_dynarray(void *dynarray, size_t reserved);
 void *_memshrink_array(void *dynarray);
 void *_insert_to_index_dynarray(void *const dynarray, const void *const element, size_t el_size, size_t index);
-
+void* _array_extend(void* array, void* buffer, size_t len);
 
 // uncomment in dev mode so that LSP highlights the code
-/*#define CONTAINER_IMPLEMENTATION*/
+#define CONTAINER_IMPLEMENTATION
 #ifdef CONTAINER_IMPLEMENTATION
 
 /* ----------------------------------------------------------------- */
@@ -545,6 +546,12 @@ void *_insert_to_index_dynarray(void *const dynarray, const void *const element,
 	memmove(array + hdr->memb_size * (index+1), array + hdr->memb_size * (index), hdr->memb_size * (hdr->size - 1 - index));
 	if (el_size != hdr->memb_size) { /* TODO: warning? */ }
 	memcpy(array + hdr->memb_size * index, element, el_size);
+	return array;
+}
+void* _array_extend(void* array, void* buffer, size_t len) {
+	struct _dynarray_header* header = array_header(array);
+	array = _memreserve_dynarray(array, (header->size + len) * header->memb_size);
+	memcpy((byte*)array + header->size*header->memb_size, buffer, len * header->memb_size);
 	return array;
 }
 int array_compare(const void *const a1, const void *const a2, qsort_cmp_t comp) {
