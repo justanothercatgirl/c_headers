@@ -4,7 +4,9 @@ CFLAGS := -g -Wall -Wextra -Wpedantic -Werror -Wno-language-extension-token
 
 tests: container types
 
-container: tests/dynarray.c tests/dynarray_struct.c tests/obscure.c tests/binary_search.c include/container.h
+container: tests/dynarray.c tests/dynarray_struct.c tests/obscure.c \
+		tests/binary_search.c tests/linked_list.c tests/hashset.c \
+		tests/hmap.c include/container.h \
 	$(CC) $(CFLAGS) -o $@ $< -DTT_CHAR
 	./$@
 	$(CC) $(CFLAGS) -o $@ $< -DTT_SHORT
@@ -23,6 +25,8 @@ container: tests/dynarray.c tests/dynarray_struct.c tests/obscure.c tests/binary
 	# ./$@
 	$(CC) $(CFLAGS) -o $@ tests/hmap.c
 	./$@
+	#$(CC) $(CFLAGS) -o $@ tests/hashset.c
+	#./$@
 
 	rm $@
 

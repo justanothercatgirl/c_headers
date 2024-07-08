@@ -360,6 +360,79 @@ char hmapi_ne(const struct hash_map_iter *a, const struct hash_map_iter* b);
 /// 1 if `iter` is an end iterator, 0 otherwise
 char hmapi_end(const struct hash_map_iter* iter);
 
+/* ----------------------------------------------------------------- */
+/* ------------------------HASH SET HEADER-------------------------- */
+/* ----------------------------------------------------------------- */
+
+#ifndef HSET_MAX_BUCKET_SIZE
+	#define HSET_MAX_BUCKET_SIZE 8
+#endif
+#ifndef HSET_INIT_SIZE
+	#define HSET_INIT_SIZE 32
+#endif
+/// should return `0` only if first argument is equal to second,
+/// otherwise should return `1` or any other integer
+/// unlike hmap, operates on data structures directly
+typedef int(*hset_equal_fn)(const void*, const void*);
+typedef size_t(*hset_hash_fn)(const void*);
+struct hash_set {
+	struct linked_list* buckets;
+	hmap_equal_fn eq;
+	hmap_hash_fn hash;
+	size_t elem_size;
+};
+enum hseti_cmp_res {
+	hset_lt = -1,
+	hset_eq = 0,
+	hset_gt = 1,
+	hset_no = 0xB19A55,
+};
+struct hash_set_iter {
+	const struct hash_set* set;
+	size_t bucket_pos;
+	struct linked_list_node* current_node;
+};
+typedef struct hash_set_iter hset_iter;
+struct hash_set hset_create(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash);
+/// copies data from pointers
+struct hash_set hset_create_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len);
+void hset_free(struct hash_set* set);
+/// copy the contents of the pair into hash map (using `memcpy`). 
+/// The element is left unchanged, the memory pointed to by `element` may be anything, from stack to FFI allocator
+void hset_insert_copy(struct hash_set* set, const void* element);
+/// returns 1 if an object was inserted, 0 if it was not. This is done to be able to free uninserted pointer.
+char hset_insert_mallocated(struct hash_set* set, void* element);
+/// get a pointer to an element with same hash and modify it directly
+void* hset_at(struct hash_set* set, void* element);
+/// returns 1 if value was updated successfully, otherwise 0 (if key does not exist)
+void hset_remove(struct hash_set* set, void* elem);
+/// double the size of a hash set
+void hset_rehash(struct hash_set* set);
+void hset_rehash_to_size(struct hash_set* set, size_t new_size);
+
+/// initialize iterator `iter`.
+void hseti_begin(const struct hash_set* map, struct hash_set_iter* iter);
+/// set iter to next element. If there is no next element, `hash_set_iter.current_node` is set to NULL
+void hseti_next(struct hash_set_iter* iter);
+/// If iter is pointing beyond hash set (after the last element), NULL is returned
+void* hseti_get(const struct hash_set_iter* iter);
+/// the function does comparison the same way `qsort_cmp_t` might do it, except this is wrapped in an enum. 
+/// This is done because 2 iterators might be incomparable (come from different hash maps), in this case `hampi_no` is returned.
+enum hseti_cmp_res hseti_cmp(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a > b, 0 otherwise.
+char hseti_gt(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a = b, 0 otherwise
+char hseti_eq(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a < b, 0 otherwise
+char hseti_lt(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a >= b, 0 otherwise 
+char hseti_ge(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a <= b, 0 otherwise 
+char hseti_le(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if a != b, otherwise 0
+char hseti_ne(const struct hash_set_iter *a, const struct hash_set_iter* b);
+/// 1 if `iter` is an end iterator, 0 otherwise
+char hseti_end(const struct hash_set_iter* iter);
 
 /* ------------------------------------------------------------------------- */
 /* ------From now on, the rest of the header is implementation details------ */
@@ -388,7 +461,7 @@ void *_insert_to_index_dynarray(void *const dynarray, const void *const element,
 void* _array_extend(void* array, void* buffer, size_t len);
 
 // uncomment in dev mode so that LSP highlights the code
-#define CONTAINER_IMPLEMENTATION
+/* #define CONTAINER_IMPLEMENTATION */
 #ifdef CONTAINER_IMPLEMENTATION
 
 /* ----------------------------------------------------------------- */
@@ -1140,7 +1213,163 @@ char hmapi_end(const struct hash_map_iter* iter) {
 	return iter->current_node == NULL || iter->bucket_pos == SIZE_MAX;
 }
 
+/* ----------------------------------------------------------------- */
+/* ---------------------HASH SET IMPLEMENTATION--------------------- */
+/* ----------------------------------------------------------------- */
 
+
+struct hash_set hset_create(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash) {
+	struct hash_set ret = {
+		.buckets = array_new(struct linked_list, HMAP_INIT_SIZE),
+		.elem_size = el_size,
+		.eq = eq,
+		.hash = hash,
+	};
+	const struct linked_list def = {
+		.meta = {
+			.element_size = el_size,
+			.assumed_size = 0, 
+			.free_function = &free,
+		}, 
+		.first = NULL, 
+		.last = NULL,
+	};
+	for (size_t i = 0; i < HSET_INIT_SIZE; ++i) ret.buckets[i] = def;
+	return ret;
+}
+struct hash_set hset_create_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len) {
+	struct hash_set ret = hset_create(el_size, eq, hash);
+	hset_rehash_to_size(&ret, buf_len / HSET_MAX_BUCKET_SIZE);
+	for (size_t i = 0; i < buf_len; ++i) hset_insert_copy(&ret, (byte*)buf + i * el_size);
+	return ret;
+}
+void hset_free(struct hash_set* set) {
+	for (size_t i = 0; i < array_size(set->buckets); ++i) ll_free(set->buckets + i);
+	array_free(set->buckets);
+	memset(set, 0, sizeof(*set));
+}
+void hset_insert_copy(struct hash_set* set, const void* element) {
+	size_t index = set->hash(element) % array_size(set->buckets);
+	if (ll_search(set->buckets + index, element, set->eq)) {
+		void* target = ll_find(set->buckets + index, element, set->eq)->data;
+		memcpy(target, element, set->elem_size);
+		return;
+	}
+	ll_append(set->buckets + index, element);
+	if (set->buckets[index].meta.assumed_size > HSET_MAX_BUCKET_SIZE) hset_rehash(set);
+}
+char hset_insert_mallocated(struct hash_set* set, void* element) {
+	size_t index = set->hash(element) % array_size(set->buckets);
+	if (ll_search(set->buckets + index, element, set->eq)) {
+		void* target = ll_find(set->buckets + index, element, set->eq)->data;
+		free(target);
+		target = element;
+		return 0;
+	}
+	ll_append(set->buckets + index, element);
+	if (set->buckets[index].meta.assumed_size > HSET_MAX_BUCKET_SIZE) hset_rehash(set);
+	return 1;
+
+}
+void* hset_at(struct hash_set* set, void* element) {
+	size_t index = set->hash(element) % array_size(set->buckets);
+	if (ll_search(set->buckets, element, set->eq))
+		return ll_find(set->buckets + index, element, set->eq)->data;
+	return NULL;
+}
+void hset_remove(struct hash_set* set, void* elem) {
+	size_t index = set->hash(elem) % array_size(set->buckets);
+	struct linked_list* target_list = set->buckets + index;
+	ll_remove_elem(target_list, elem, set->eq);
+}
+void hset_rehash(struct hash_set* set) {
+	hset_rehash_to_size(set, array_size(set->buckets) << 1);
+}
+void hset_rehash_to_size(struct hash_set* set, size_t new_size) {
+	struct linked_list* new_buckets = array_new(struct linked_list, new_size);
+	for (size_t i = 0; i < new_size; ++i) {
+		new_buckets[i] = ll_create(sizeof(struct hmap_pair));
+		new_buckets[i].meta.free_function = __hmap_ll_custom_free;
+	}
+	struct hash_set_iter iter;
+	for (hseti_begin(set, &iter); !hseti_end(&iter); hseti_next(&iter)) {
+		void* hash_data = hseti_get(&iter);
+		size_t hash_pos = set->hash(hash_data) % new_size;
+		ll_append(new_buckets + hash_pos, hash_data);
+	}
+	for (size_t i = 0; i < array_size(set->buckets); ++i) {
+		ll_free(set->buckets + i);
+	}
+	array_free(set->buckets);
+	set->buckets = new_buckets;
+}
+
+void hseti_begin(const struct hash_set* set, struct hash_set_iter* iter) {
+	memset(iter, 0, sizeof(struct hash_map_iter));
+	iter->set = set;
+	struct linked_list* buckets = set->buckets;
+	for (size_t i = 0; i < array_size(buckets); ++i) {
+		if (buckets[i].first == NULL) continue;
+		iter->bucket_pos = i;
+		iter->current_node = buckets[i].first;
+		return;
+	}
+	iter->bucket_pos = SIZE_MAX;
+	iter->current_node = NULL;
+}
+void hseti_next(struct hash_set_iter* iter) {
+	if (iter->current_node == NULL) return;
+	if (iter->current_node->next != NULL) {
+		iter->current_node = iter->current_node->next;
+		return;
+	}
+	const struct linked_list *buckets = iter->set->buckets;
+	for (size_t i = iter->bucket_pos + 1; i < array_size(buckets); ++i) {
+		if (buckets[i].first == NULL) continue;
+		iter->bucket_pos = i;
+		iter->current_node = buckets[i].first;
+		return;
+	}
+	iter->bucket_pos = SIZE_MAX;
+	iter->current_node = NULL;
+}
+void* hseti_get(const struct hash_set_iter* iter) {
+	if (iter->current_node == NULL) return NULL;
+	return iter->current_node->data;
+}
+enum hseti_cmp_res hseti_cmp(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	if (a->set != b->set) return hset_no;
+	if (a->bucket_pos != b->bucket_pos) return (a->bucket_pos > b->bucket_pos) ? hset_gt : hset_lt;
+	if (a->current_node == b->current_node) return hset_eq;
+	for (const struct linked_list_node* nd = a->current_node; nd != NULL; nd = nd->next) {
+		if (nd == b->current_node) return hset_lt;
+	}
+	return hset_gt;
+}
+char hseti_gt(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	return hseti_cmp(a, b) == hset_gt;
+}
+char hseti_eq(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	return hseti_cmp(a, b) == hset_eq;
+}
+char hseti_lt(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	return hseti_cmp(a, b) == hset_lt;
+}
+char hseti_ge(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	enum hseti_cmp_res cmp = hseti_cmp(a, b);
+	return cmp == hset_gt || cmp == hset_eq;
+}
+char hseti_le(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	enum hseti_cmp_res cmp = hseti_cmp(a, b);
+	return cmp == hset_lt || cmp == hset_eq;
+}
+char hseti_ne(const struct hash_set_iter *a, const struct hash_set_iter* b) {
+	enum hseti_cmp_res cmp = hseti_cmp(a, b);
+	return cmp != hset_eq;
+}
+char hseti_end(const struct hash_set_iter* iter) {
+	return iter->current_node == NULL || iter->bucket_pos == SIZE_MAX;
+}
 #endif // CONTAINER_IMPLEMENTATION
 
 #endif // JUSTANOTHERCATGIRL_HEADERS_CONTAINER
