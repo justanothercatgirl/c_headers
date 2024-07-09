@@ -2,10 +2,10 @@
 #define JUSTANOTHERCATGIRL_HEADERS_CONTAINER
 
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 
 /* ----------------------------------------------------------------- */
 /* -----------------UTILITY HEADER---------------------------------- */
@@ -312,9 +312,9 @@ struct hash_map_iter {
 	struct linked_list_node* current_node;
 };
 typedef struct hash_map_iter hmap_iter;
-struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash);
+struct hash_map hmap_new(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash);
 /// copies data from pointers
-struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len);
+struct hash_map hmap_new_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len);
 void hmap_free(struct hash_map* map);
 /// copy the contents of the pair into hash map (using `memcpy`). 
 /// The element is left unchanged, the memory pointed to by `element` may be anything, from stack to FFI allocator
@@ -377,8 +377,8 @@ typedef int(*hset_equal_fn)(const void*, const void*);
 typedef size_t(*hset_hash_fn)(const void*);
 struct hash_set {
 	struct linked_list* buckets;
-	hmap_equal_fn eq;
-	hmap_hash_fn hash;
+	hset_equal_fn eq;
+	hset_hash_fn hash;
 	size_t elem_size;
 };
 enum hseti_cmp_res {
@@ -393,9 +393,10 @@ struct hash_set_iter {
 	struct linked_list_node* current_node;
 };
 typedef struct hash_set_iter hset_iter;
-struct hash_set hset_create(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash);
+struct hash_set hset_new(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash);
 /// copies data from pointers
-struct hash_set hset_create_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len);
+struct hash_set hset_new_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len);
+char hset_ok(struct hash_set set);
 void hset_free(struct hash_set* set);
 /// copy the contents of the pair into hash map (using `memcpy`). 
 /// The element is left unchanged, the memory pointed to by `element` may be anything, from stack to FFI allocator
@@ -409,6 +410,7 @@ void hset_remove(struct hash_set* set, void* elem);
 /// double the size of a hash set
 void hset_rehash(struct hash_set* set);
 void hset_rehash_to_size(struct hash_set* set, size_t new_size);
+size_t hset_count(struct hash_set* set);
 
 /// initialize iterator `iter`.
 void hseti_begin(const struct hash_set* map, struct hash_set_iter* iter);
@@ -1029,7 +1031,7 @@ void __hmap_ll_custom_free(void* data) {
 	free(pair->val);
 	free(data);
 }
-struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash) {
+struct hash_map hmap_new(const size_t key_size, const size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash) {
 	struct hash_map ret = {
 		.buckets = array_new(struct linked_list, HMAP_INIT_SIZE),
 		.key_size = key_size,
@@ -1049,8 +1051,8 @@ struct hash_map hmap_create(const size_t key_size, const size_t val_size, hmap_e
 	for (size_t i = 0; i < HMAP_INIT_SIZE; ++i) ret.buckets[i] = def;
 	return ret;
 }
-struct hash_map hmap_create_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len) {
-	struct hash_map ret = hmap_create(key_size, val_size, eq, hash);
+struct hash_map hmap_new_from_buffer(size_t key_size, size_t val_size, hmap_equal_fn eq, hmap_hash_fn hash, const struct hmap_pair* buf, size_t buf_len) {
+	struct hash_map ret = hmap_new(key_size, val_size, eq, hash);
 	hmap_rehash_to_size(&ret, buf_len / HMAP_MAX_BUCKET_SIZE);
 	for (size_t i = 0; i < buf_len; ++i) hmap_insert_copy(&ret, buf[i]);
 	return ret;
@@ -1218,7 +1220,7 @@ char hmapi_end(const struct hash_map_iter* iter) {
 /* ----------------------------------------------------------------- */
 
 
-struct hash_set hset_create(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash) {
+struct hash_set hset_new(const size_t el_size, hset_equal_fn eq, hset_hash_fn hash) {
 	struct hash_set ret = {
 		.buckets = array_new(struct linked_list, HMAP_INIT_SIZE),
 		.elem_size = el_size,
@@ -1237,11 +1239,14 @@ struct hash_set hset_create(const size_t el_size, hset_equal_fn eq, hset_hash_fn
 	for (size_t i = 0; i < HSET_INIT_SIZE; ++i) ret.buckets[i] = def;
 	return ret;
 }
-struct hash_set hset_create_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len) {
-	struct hash_set ret = hset_create(el_size, eq, hash);
+struct hash_set hset_new_from_buffer(size_t el_size, hset_equal_fn eq, hset_hash_fn hash, const void* buf, size_t buf_len) {
+	struct hash_set ret = hset_new(el_size, eq, hash);
 	hset_rehash_to_size(&ret, buf_len / HSET_MAX_BUCKET_SIZE);
 	for (size_t i = 0; i < buf_len; ++i) hset_insert_copy(&ret, (byte*)buf + i * el_size);
 	return ret;
+}
+char hset_ok(struct hash_set set) {
+	return set.buckets != NULL && set.elem_size != 0;
 }
 void hset_free(struct hash_set* set) {
 	for (size_t i = 0; i < array_size(set->buckets); ++i) ll_free(set->buckets + i);
@@ -1288,8 +1293,8 @@ void hset_rehash(struct hash_set* set) {
 void hset_rehash_to_size(struct hash_set* set, size_t new_size) {
 	struct linked_list* new_buckets = array_new(struct linked_list, new_size);
 	for (size_t i = 0; i < new_size; ++i) {
-		new_buckets[i] = ll_create(sizeof(struct hmap_pair));
-		new_buckets[i].meta.free_function = __hmap_ll_custom_free;
+		new_buckets[i] = ll_create(set->elem_size);
+		/* new_buckets[i].meta.free_function = free; */
 	}
 	struct hash_set_iter iter;
 	for (hseti_begin(set, &iter); !hseti_end(&iter); hseti_next(&iter)) {
@@ -1302,6 +1307,13 @@ void hset_rehash_to_size(struct hash_set* set, size_t new_size) {
 	}
 	array_free(set->buckets);
 	set->buckets = new_buckets;
+}
+size_t hset_count(struct hash_set* set) {
+	size_t res = 0;
+	for (size_t i = 0; i < array_size(set->buckets); ++i) {
+		res += (set->buckets)[i].meta.assumed_size;
+	}
+	return res;
 }
 
 void hseti_begin(const struct hash_set* set, struct hash_set_iter* iter) {
