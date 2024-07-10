@@ -1278,7 +1278,7 @@ char hset_insert_mallocated(struct hash_set* set, void* element) {
 }
 void* hset_at(struct hash_set* set, void* element) {
 	size_t index = set->hash(element) % array_size(set->buckets);
-	if (ll_search(set->buckets, element, set->eq))
+	if (ll_search(set->buckets + index, element, set->eq))
 		return ll_find(set->buckets + index, element, set->eq)->data;
 	return NULL;
 }
