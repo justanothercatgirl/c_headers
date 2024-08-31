@@ -897,9 +897,13 @@ void ll_remove_elem(struct linked_list* list, const void* elem, qsort_cmp_t cmp)
 				*snd = fst->next;
 	while (snd != NULL) {
 		if (cmp(snd->data, elem) == 0) {
+			if (snd->next == NULL) list->last = fst;
 			fst->next = ll_free_node(list, snd);
+			--list->meta.assumed_size;
 			return;
 		}
+		fst = snd;
+		snd = snd->next;
 	}
 	if (cmp(fst->data, elem) == 0) ll_remove_back(list);
 }
